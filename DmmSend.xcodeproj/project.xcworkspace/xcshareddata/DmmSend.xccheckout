@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>IDESourceControlProjectFavoriteDictionaryKey</key>
+	<false/>
+	<key>IDESourceControlProjectIdentifier</key>
+	<string>D80DD0E9-C7EC-4007-B483-643865C1536F</string>
+	<key>IDESourceControlProjectName</key>
+	<string>DmmSend</string>
+	<key>IDESourceControlProjectOriginsDictionary</key>
+	<dict>
+		<key>40C5BC923F812553B2603D42A24EAECCBB011924</key>
+		<string>https://github.com/furiousgreencloud/DMM-Max-External.git</string>
+	</dict>
+	<key>IDESourceControlProjectPath</key>
+	<string>DmmSend.xcodeproj</string>
+	<key>IDESourceControlProjectRelativeInstallPathDictionary</key>
+	<dict>
+		<key>40C5BC923F812553B2603D42A24EAECCBB011924</key>
+		<string>../..</string>
+	</dict>
+	<key>IDESourceControlProjectURL</key>
+	<string>https://github.com/furiousgreencloud/DMM-Max-External.git</string>
+	<key>IDESourceControlProjectVersion</key>
+	<integer>111</integer>
+	<key>IDESourceControlProjectWCCIdentifier</key>
+	<string>40C5BC923F812553B2603D42A24EAECCBB011924</string>
+	<key>IDESourceControlProjectWCConfigurations</key>
+	<array>
+		<dict>
+			<key>IDESourceControlRepositoryExtensionIdentifierKey</key>
+			<string>public.vcs.git</string>
+			<key>IDESourceControlWCCIdentifierKey</key>
+			<string>40C5BC923F812553B2603D42A24EAECCBB011924</string>
+			<key>IDESourceControlWCCName</key>
+			<string>DMM-Max-External</string>
+		</dict>
+	</array>
+</dict>
+</plist>

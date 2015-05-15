@@ -25,7 +25,7 @@ Communication Format
 #include <stdio.h>
 #include <limits.h>
 
-#include "DmmDriver.h"
+#include "SerialPort.h"
 
 #define Go_Absolute_Pos 0x01
 #define Turn_ConstSpeed 0x0a
@@ -58,8 +58,8 @@ Communication Format
 
 #define Read_MainGain 0x18
 #define Read_SpeedGain 0x19
-#define Read_IntGain 0x20
-#define Read_DriveConfig 0x08
+#define Read_IntGain 0x1a
+#define Read_Drive_Config 0x08
 #define Read_Drive_Status 0x09
 #define Read_Pos_OnRange 0x1e
 #define Read_GearNumber 0x1f
@@ -73,11 +73,21 @@ Communication Format
     #define MAX(a,b) ((a>b) ? a : b)
 #endif
 
+typedef enum {In_Progress = 0, Complete_Success,  CRC_Error, Timeout_Error } ProtocolError_t;
+
+static char InputBuffer[8]; //Input buffer from RS232,
+static signed int InBfTopPointer = 0,InBfBtmPointer = 0;//input buffer pointers
+static unsigned char Read_Package_Buffer[8], Read_Num, Read_Package_Length;
+long Drive_Read_Value = LONG_MIN;
+unsigned char Drive_Read_Code = -1;
+ProtocolError_t ProtocolError = Timeout_Error;
+unsigned char configByte = 0;
+
 // Forwards
 ProtocolError_t Get_Function(void);
 long Cal_SignValue(unsigned char One_Package[8]);
 unsigned int Cal_UnsignedValue(unsigned char One_Package[8]);
-void Make_CRC_Send(DmmProtocolBuffer_t *pp, unsigned char Plength,unsigned char B[8]);
+void Make_CRC_Send(unsigned char Plength,unsigned char B[8]);
 
 const char * ParameterName(char isCode) {
     switch(isCode) {
@@ -97,11 +107,20 @@ const char * ParameterName(char isCode) {
     }
 }
 
-/* TODO - Reading
+
 void ReadPackage() {
   unsigned char c,cif;
   if (SerialAvailable() == 0) { // no new data
       return;
+      /*
+       delay(50);
+      printf("... \n");
+      if (SerialAvailable() == 0) {
+          ProtocolError = Timeout_Error;
+          printf("Timeout\n");
+          return;
+      }
+      */
   }
   while(SerialAvailable() > 0 && ((InBfTopPointer+1) % sizeof(InputBuffer)) != InBfBtmPointer  ) {
       // while there is data and buffer not full
@@ -139,7 +158,6 @@ void ReadPackage() {
     }
   }
 }
-
 
 ProtocolError_t Get_Function(void)
 {
@@ -184,7 +202,6 @@ ProtocolError_t Get_Function(void)
   printf("%s: %ld\n",ParameterName(Drive_Read_Code), Drive_Read_Value);
   return Complete_Success;
 }
-*/
 
 bool printStatusByte(unsigned char statusByte) {
     bool FatalError = false;
@@ -241,8 +258,7 @@ bool printStatusByte(unsigned char statusByte) {
 /*Get data with sign - long*/
 long Cal_SignValue(unsigned char One_Package[8])
 {
-  char Package_Length,OneChar;
-  int i;
+  char Package_Length,OneChar,i;
   long Lcmd;
   OneChar = One_Package[1];
   OneChar = OneChar>>5;
@@ -265,8 +281,7 @@ long Cal_SignValue(unsigned char One_Package[8])
 /*Get data with out  - unsigned */
 unsigned int Cal_UnsignedValue(unsigned char One_Package[8])
 {
-    char Package_Length,OneChar;
-    int i;
+    char Package_Length,OneChar,i;
     unsigned int ret;
     OneChar = One_Package[1];
     OneChar = OneChar>>5;
@@ -292,9 +307,8 @@ unsigned int Cal_UnsignedValue(unsigned char One_Package[8])
 // always B0, but in the code of below, the first byte is always B0.
 //
 
-void Send_Package(DmmProtocolBuffer_t* pp,unsigned char func, char ID , long Displacement)
+void Send_Package(unsigned char func, char ID , long Displacement)
 {
-  pp->ProtocolError = false;
     
   unsigned char B[8],Package_Length,Function_Code;
   long TempLong;
@@ -335,23 +349,22 @@ void Send_Package(DmmProtocolBuffer_t* pp,unsigned char func, char ID , long Dis
     Package_Length = 4;
   }
   B[1] += (Package_Length-4)*32 + Function_Code;
-  Make_CRC_Send(pp, Package_Length,B);
+  Make_CRC_Send(Package_Length,B);
 }
 
 
-void Make_CRC_Send(DmmProtocolBuffer_t* pp, unsigned char Plength,unsigned char B[8])
-{
+void Make_CRC_Send(unsigned char Plength,unsigned char B[8]) {
   unsigned char Error_Check = 0;
   for(int i=0;i<Plength-1;i++) {
-    SerialWrite(B[i],pp->hook);
+    SerialWrite(B[i]);
     Error_Check += B[i];
   }
   Error_Check = Error_Check|0x80;
-  SerialWrite(Error_Check, pp->hook);
+  SerialWrite(Error_Check);
 }
 
 
-/* - Reading
+/*
 void ReadMotorTorqueCurrent(char AxisID)  {
     
   // Below are the codes for reading the motor torque current
@@ -367,94 +380,94 @@ void ReadMotorTorqueCurrent(char AxisID)  {
 
  */
 
-void MoveMotorToAbsolutePosition32(DmmProtocolBuffer_t* pp, char Axis_Num,long Pos32)
-{
-  Send_Package(pp,Go_Absolute_Pos, Axis_Num, Pos32);
+
+void MoveMotorToAbsolutePosition32(char Axis_Num,long Pos32) {
+//  printf("Going To: %ld\n",Pos32);
+  Send_Package(Go_Absolute_Pos, Axis_Num, Pos32);
 }
 
-void MoveMotorConstantRotation(DmmProtocolBuffer_t* pp, char Axis_Num,long r) {
-    // TODO set Limits for 3 byte value of r
-    Send_Package(pp, Turn_ConstSpeed, Axis_Num, r);
+void MoveMotorConstantRotation(char Axis_Num,long r) {
+// TODO set Limits for 3 byte value of r
+    Send_Package(Turn_ConstSpeed, Axis_Num, r);
 }
 
-void ResetOrgin(DmmProtocolBuffer_t* pp, char Axis_Num) {
-    Send_Package(pp, Set_Origin, Axis_Num, 0); // 0: Dummy Data
+void ResetOrgin(char Axis_Num) {
+  Send_Package(Set_Origin, Axis_Num, 0); // 0: Dummy Data
 }
 
-void SetMaxSpeed(DmmProtocolBuffer_t* pp,char Axis_Num, int maxSpeed) {
+void SetMaxSpeed(char Axis_Num, int maxSpeed) {
   long m = MAX(1,MIN(127,maxSpeed));
-  Send_Package(pp,Set_HighSpeed, Axis_Num, m);
+  Send_Package(Set_HighSpeed, Axis_Num, m);
 }
 
-void SetMaxAccel(DmmProtocolBuffer_t* pp, char Axis_Num, int maxAccel) {
+void SetMaxAccel(char Axis_Num, int maxAccel) {
     long m = MAX( 1, MIN( 127, maxAccel));
-    Send_Package(pp, Set_HighAccel, Axis_Num, m);
+    Send_Package(Set_HighAccel, Axis_Num, m);
 }
 
-void SetMainGain(DmmProtocolBuffer_t* pp, char Axis_Num, int gain) {
+void SetMainGain(char Axis_Num, long gain) {
     long l = MAX( 1, MIN( 127, gain));
-    Send_Package(pp, Set_MainGain, Axis_Num, l);
+    Send_Package(Set_MainGain, Axis_Num, l);
 }
 
-void SetSpeedGain(DmmProtocolBuffer_t* pp,char Axis_Num, long gain) {
+void SetSpeedGain(char Axis_Num, long gain) {
     long l = MAX( 1, MIN( 127, gain));
-    Send_Package(pp, Set_SpeedGain, Axis_Num, l);
+    Send_Package(Set_SpeedGain, Axis_Num, l);
 }
 
-void SetIntGain(DmmProtocolBuffer_t* pp, char Axis_Num, long gain) {
+void SetIntGain(char Axis_Num, long gain) {
     long l = MAX(1, MIN(127, gain));
-    Send_Package(pp, Set_IntGain, Axis_Num, l);
+    Send_Package(Set_IntGain, Axis_Num, l);
 }
 
-void MotorDisengage(DmmProtocolBuffer_t* pp, char Axis_Num, unsigned char curConfig) {
+void MotorDisengage(char Axis_Num, unsigned char curConfig) {
     // Free Shaft
-    Send_Package(pp, Set_Drive_Config, Axis_Num, curConfig | Config_Bit_MOTOR_DRIVE);
+    Send_Package(Set_Drive_Config, Axis_Num, curConfig | Config_Bit_MOTOR_DRIVE);
 }
 
-void MotorEngage(DmmProtocolBuffer_t* pp, char Axis_Num, unsigned char curConfig) {
-    Send_Package(pp, Set_Drive_Config, Axis_Num, curConfig & !Config_Bit_MOTOR_DRIVE);
+void MotorEngage( char Axis_Num, unsigned char curConfig) {
+    Send_Package(Set_Drive_Config, Axis_Num, curConfig & !Config_Bit_MOTOR_DRIVE);
 }
 
-/* TODO - Reading
-void ReadMainGain(DmmProtocolBuffer_t* pp, char Axis_Num) {
-  Send_Package(pp, Read_MainGain, Axis_Num, Is_MainGain);
-  pp->ProtocolError = In_Progress;
-  while(pp->ProtocolError == In_Progress) {
+void ReadMainGain(char Axis_Num) {
+  Send_Package(Read_MainGain, Axis_Num, Is_MainGain);
+  ProtocolError = In_Progress;
+  while(ProtocolError == In_Progress) {
       ReadPackage();
   }
 }
 
-long ReadParamer(DmmProtocolBuffer_t *pp, char queryParam, char Axis_Num) {
-    pp->ProtocolError = In_Progress;
-    pp->Drive_Read_Value = -1;
-    pp->Drive_Read_Code = -1;
-    Send_Package(pp, queryParam, Axis_Num, 0 ); // 0 is a dummy Data Value
-    while(pp->ProtocolError == In_Progress) {
+long ReadParamer(char queryParam, char Axis_Num) {
+    ProtocolError = In_Progress;
+    Drive_Read_Value = -1;
+    Drive_Read_Value = -1;
+    Send_Package(queryParam, Axis_Num, 0 ); // 0 is a dummy Data Value
+    while(ProtocolError == In_Progress) {
         ReadPackage();
+        delay(20);
     }
 //    printf("%s: %ld\n",ParameterName(Drive_Read_Code), Drive_Read_Value);
-    if (pp->ProtocolError == Complete_Success) {
-        return pp->Drive_Read_Code;
+    if (ProtocolError == Complete_Success) {
+        return Drive_Read_Value;
     } else {
         return LONG_MIN;
     }
 }
 
-void ReadMotorPosition32(DmmProtocolBuffer_t *pp, char AxisID)
+void ReadMotorPosition32(char AxisID)
 { // Below are the codes for reading the motor shaft 32bits absolute position
     //Read motor 32bits position
-    pp->ProtocolError = In_Progress;
-    Send_Package(pp, General_Read, AxisID , Is_AbsPos32);
+    ProtocolError = In_Progress;
+    Send_Package(General_Read, AxisID , Is_AbsPos32);
     // Function code is General_Read, but one byte data is : Is_AbsPos32
     // Then the drive will return a packet, Function code is Is_AbsPos32
     // and the data is 28bits motor position32.
-    while(pp->ProtocolError == In_Progress) {
+    while(ProtocolError == In_Progress) {
         ReadPackage();
     }
 }
-*/
 
-/*
+
 int testMotor(void)
 {
     const char Axis_Num = 0;
@@ -573,4 +586,3 @@ int main() {
     }
     return ret;
 }
-*/

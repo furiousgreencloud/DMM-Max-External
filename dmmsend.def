@@ -1,0 +1,4 @@
+LIBRARY dmmsend.mxe
+
+EXPORTS
+	main
